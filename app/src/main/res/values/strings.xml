@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Glyphora</string>
+    <string name="library_title">Ma Bibliothèque</string>
+    <string name="import_document">Importer un document</string>
+    <string name="no_documents">Aucun document dans votre bibliothèque.\nAppuyez sur + pour importer un livre ou fichier.</string>
+    <string name="format_epub">EPUB</string>
+    <string name="format_pdf">PDF</string>
+    <string name="format_html">HTML</string>
+    <string name="format_txt">TXT</string>
+    <string name="settings_title">Paramètres de lecture</string>
+    <string name="settings_theme_system">Système</string>
+    <string name="settings_theme_light">Clair</string>
+    <string name="settings_theme_dark">Sombre</string>
+    <string name="settings_theme_sepia">Sépia</string>
+    <string name="settings_font_size">Taille du texte</string>
+    <string name="settings_font_family">Police d\'écriture</string>
+    <string name="settings_line_height">Interligne</string>
+    <string name="bookmarks_title">Marque-pages</string>
+    <string name="table_of_contents">Table des matières</string>
+</resources>

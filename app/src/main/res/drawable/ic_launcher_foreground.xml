@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Représentation stylisée d'un livre ouvert (Glyphora) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,30h22c4,0 7,3 7,7v40c0,-2 -2,-4 -5,-4h-24c-2,0 -4,2 -4,4V34c0,-2 2,-4 4,-4z M76,30H54c-4,0 -7,3 -7,7v40c0,-2 2,-4 5,-4h24c2,0 4,2 4,4V34c0,-2 -2,-4 -4,-4z" />
+</vector>
