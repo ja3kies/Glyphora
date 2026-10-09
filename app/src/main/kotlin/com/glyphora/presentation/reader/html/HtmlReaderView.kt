@@ -58,11 +58,9 @@ fun HtmlReaderView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
             WebView(context).apply {
-                settings.apply {
-                    javaScriptEnabled = false
-                    blockNetworkLoads = true
-                    loadWithOverviewMode = true
-                }
+                settings.javaScriptEnabled = false
+                settings.blockNetworkLoads = true
+                settings.loadWithOverviewMode = true
                 webViewClient = WebViewClient()
             }
         },
