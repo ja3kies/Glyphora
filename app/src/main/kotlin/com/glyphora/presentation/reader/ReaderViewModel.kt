@@ -35,7 +35,7 @@ sealed class ReaderContentState {
     data class Txt(val data: TxtDocumentData, val initialPage: Int) : ReaderContentState()
 }
 
-class ReaderViewModel(
+class ReaderViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: DocumentRepository = GlyphoraApplication.instance.documentRepository
 ) : AndroidViewModel(application) {
