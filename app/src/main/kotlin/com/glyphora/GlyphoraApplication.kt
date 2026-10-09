@@ -1,19 +1,34 @@
+
 package com.glyphora
 
 import android.app.Application
+import androidx.room.Room
+import com.glyphora.data.local.GlyphoraDatabase
 import com.glyphora.data.repository.DocumentRepository
 import com.glyphora.data.repository.DocumentRepositoryImpl
 
 class GlyphoraApplication : Application() {
 
-    // Service locator simple et robuste pour éviter toute dépendance d'injection lourde
+    lateinit var database: GlyphoraDatabase
+        private set
+
     lateinit var documentRepository: DocumentRepository
         private set
 
     override fun onCreate() {
         super.onCreate()
         instance = this
-        documentRepository = DocumentRepositoryImpl(this)
+
+        database = Room.databaseBuilder(
+            applicationContext,
+            GlyphoraDatabase::class.java,
+            "glyphora.db"
+        ).build()
+
+        documentRepository = DocumentRepositoryImpl(
+            context = applicationContext,
+            database = database
+        )
     }
 
     companion object {

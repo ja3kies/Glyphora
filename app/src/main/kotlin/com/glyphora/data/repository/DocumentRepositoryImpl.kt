@@ -9,6 +9,9 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.glyphora.data.local.GlyphoraDatabase
+import com.glyphora.data.local.DocumentEntity
+import com.glyphora.data.local.BookmarkEntity
 import com.glyphora.data.parsers.EpubParser
 import com.glyphora.data.parsers.HtmlParser
 import com.glyphora.data.parsers.PdfRendererEngine
@@ -31,7 +34,8 @@ import java.util.UUID
 private val Context.dataStore by preferencesDataStore(name = "glyphora_settings")
 
 class DocumentRepositoryImpl(
-    private val context: Context
+    private val context: Context,
+    private val database: GlyphoraDatabase
 ) : DocumentRepository {
 
     private val documentsState = MutableStateFlow<List<Document>>(emptyList())
