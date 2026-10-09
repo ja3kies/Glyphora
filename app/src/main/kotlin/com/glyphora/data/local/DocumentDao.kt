@@ -15,6 +15,9 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :id LIMIT 1")
     suspend fun getDocumentById(id: String): DocumentEntity?
 
+    @Query("SELECT * FROM documents WHERE uriString = :uriString LIMIT 1")
+    suspend fun getDocumentByUri(uriString: String): DocumentEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDocument(document: DocumentEntity)
 
