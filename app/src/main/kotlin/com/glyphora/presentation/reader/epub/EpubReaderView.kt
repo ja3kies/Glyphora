@@ -69,12 +69,12 @@ fun EpubReaderView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
                 WebView(context).apply {
-                    settings.javaScriptEnabled = false
-                    settings.blockNetworkLoads = true
-                    settings.loadWithOverviewMode = true
-                    settings.useWideViewPort = false
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
+                    this.settings.javaScriptEnabled = false
+                    this.settings.blockNetworkLoads = true
+                    this.settings.loadWithOverviewMode = true
+                    this.settings.useWideViewPort = false
+                    this.settings.builtInZoomControls = true
+                    this.settings.displayZoomControls = false
                     webViewClient = WebViewClient()
                 }
             },
