@@ -16,6 +16,9 @@ interface BookmarkDao {
     """)
     fun getBookmarks(documentId: String): Flow<List<BookmarkEntity>>
 
+    @Query("SELECT * FROM bookmarks ORDER BY timestamp DESC")
+    fun getAllBookmarks(): Flow<List<BookmarkEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmark(bookmark: BookmarkEntity)
 

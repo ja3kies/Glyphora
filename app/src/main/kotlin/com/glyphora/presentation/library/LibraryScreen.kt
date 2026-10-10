@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.MenuBook
@@ -54,6 +55,7 @@ import com.glyphora.domain.model.Document
 fun LibraryScreen(
     onOpenDocument: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     viewModel: LibraryViewModel = viewModel()
 ) {
     val documents by viewModel.documents.collectAsState()
@@ -63,9 +65,7 @@ fun LibraryScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            viewModel.importDocument(it) { doc ->
-                onOpenDocument(doc.id)
-            }
+            viewModel.importDocument(it)
         }
     }
 
@@ -89,6 +89,12 @@ fun LibraryScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenBookmarks) {
+                        Icon(
+                            imageVector = Icons.Default.Bookmark,
+                            contentDescription = "Mes marque-pages"
+                        )
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             imageVector = Icons.Default.Settings,

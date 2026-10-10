@@ -173,23 +173,23 @@ class DocumentRepositoryImpl(
                 emit(emptyList())
             }
 
+    override fun getAllBookmarks(): Flow<List<Bookmark>> =
+        bookmarkDao.getAllBookmarks()
+            .map { list -> list.map { it.toDomain() } }
+            .catch { e ->
+                Log.e(TAG, "Lecture de tous les signets impossible", e)
+                emit(emptyList())
+            }
+
     override suspend fun addBookmark(bookmark: Bookmark) {
         withContext(Dispatchers.IO) {
-            try {
-                bookmarkDao.insertBookmark(bookmark.toEntity())
-            } catch (e: Exception) {
-                Log.e(TAG, "Ajout du signet impossible", e)
-            }
+            bookmarkDao.insertBookmark(bookmark.toEntity())
         }
     }
 
     override suspend fun removeBookmark(bookmarkId: String) {
         withContext(Dispatchers.IO) {
-            try {
-                bookmarkDao.deleteBookmark(bookmarkId)
-            } catch (e: Exception) {
-                Log.e(TAG, "Suppression du signet impossible", e)
-            }
+            bookmarkDao.deleteBookmark(bookmarkId)
         }
     }
 
