@@ -15,6 +15,7 @@ import com.glyphora.core.theme.SepiaBackground
 import com.glyphora.core.theme.SepiaOnSurface
 import com.glyphora.domain.model.ReaderSettings
 import com.glyphora.domain.model.ReaderThemeMode
+import androidx.compose.runtime.rememberUpdatedState
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -55,7 +56,7 @@ fun EpubReaderView(
         </style>
         """.trimIndent()
     }
-
+    val currentScrollCallback = rememberUpdatedState(onScrollProgressChanged)
     val styledHtml = remember(htmlContent, injectedStyles) {
         if (htmlContent.contains("<head>", ignoreCase = true)) {
             htmlContent.replace("<head>", "<head>$injectedStyles", ignoreCase = true)
@@ -76,10 +77,28 @@ fun EpubReaderView(
                     this.settings.builtInZoomControls = true
                     this.settings.displayZoomControls = false
                     webViewClient = WebViewClient()
+                    var lastReportedPercent = -1
+                    setOnScrollChangeListener { view, _, scrollY, _, _ ->
+                        val webView = view as WebView
+                        val range = (webView.computeVerticalScrollRange() - webView.height).coerceAtLeast(0)
+                        val progress = if (range > 0) {
+                            (scrollY.toFloat() / range).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
+                        val percent = (progress * 100).toInt()
+                        if (percent != lastReportedPercent) {
+                            lastReportedPercent = percent
+                            currentScrollCallback.value(progress)
+                        }
+                    }
                 }
             },
             update = { webView ->
-                webView.loadDataWithBaseURL(null, styledHtml, "text/html", "UTF-8", null)
+                if (webView.tag != styledHtml) {
+                    webView.tag = styledHtml
+                    webView.loadDataWithBaseURL(null, styledHtml, "text/html", "UTF-8", null)
+                }
             }
         )
     }

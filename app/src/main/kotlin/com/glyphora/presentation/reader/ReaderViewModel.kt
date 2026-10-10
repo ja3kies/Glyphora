@@ -115,6 +115,30 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
 
+    fun onEpubProgressChanged(chapterIndex: Int, totalChapters: Int, overallProgress: Float) {
+        val doc = _currentDocument.value ?: return
+        val total = totalChapters.coerceAtLeast(0)
+        val page = if (total > 0) chapterIndex.coerceIn(0, total - 1) else 0
+        val percent = overallProgress.coerceIn(0f, 1f)
+
+        _currentDocument.value = doc.copy(
+            currentPage = page,
+            totalPages = total,
+            readingProgressPercent = percent
+        )
+
+        viewModelScope.launch {
+            repository.updateReadingProgress(
+                ReadingProgress(
+                    documentId = doc.id,
+                    currentPage = page,
+                    totalPages = total,
+                    progressPercent = percent
+                )
+            )
+        }
+    }
+
     fun onPageChanged(page: Int, total: Int) {
         val doc = _currentDocument.value ?: return
         val safeTotal = total.coerceAtLeast(0)

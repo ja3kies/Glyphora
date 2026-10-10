@@ -122,7 +122,9 @@ fun ReaderScreen(
                             htmlContent = currentChapter.contentHtml,
                             settings = settings,
                             onScrollProgressChanged = { progress ->
-                                viewModel.onPageChanged(state.currentChapterIndex, state.data.chapters.size)
+                                val total = state.data.chapters.size.coerceAtLeast(1)
+                                val overallProgress = (state.currentChapterIndex + progress.coerceIn(0f, 1f)) / total.toFloat()
+                                viewModel.onEpubProgressChanged(state.currentChapterIndex, total, overallProgress)
                             }
                         )
                     }
