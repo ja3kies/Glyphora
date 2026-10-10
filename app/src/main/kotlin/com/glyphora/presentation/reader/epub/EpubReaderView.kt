@@ -80,7 +80,8 @@ fun EpubReaderView(
                     var lastReportedPercent = -1
                     setOnScrollChangeListener { view, _, scrollY, _, _ ->
                         val webView = view as WebView
-                        val range = (webView.computeVerticalScrollRange() - webView.height).coerceAtLeast(0)
+                        val contentHeight = (webView.contentHeight * webView.scale).toInt()
+                        val range = (contentHeight - webView.height).coerceAtLeast(0)
                         val progress = if (range > 0) {
                             (scrollY.toFloat() / range).coerceIn(0f, 1f)
                         } else {
