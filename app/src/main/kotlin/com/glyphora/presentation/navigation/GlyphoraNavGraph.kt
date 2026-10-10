@@ -7,6 +7,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.glyphora.presentation.bookmarks.BookmarksScreen
 import com.glyphora.presentation.library.LibraryScreen
 import com.glyphora.presentation.reader.ReaderScreen
 import com.glyphora.presentation.settings.SettingsScreen
@@ -28,6 +29,20 @@ fun GlyphoraNavGraph(
                 },
                 onOpenSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onOpenBookmarks = {
+                    navController.navigate(Screen.Bookmarks.route)
+                }
+            )
+        }
+
+        composable(Screen.Bookmarks.route) {
+            BookmarksScreen(
+                onBack = { navController.popBackStack() },
+                onOpenBookmark = { documentId, page ->
+                    navController.navigate(
+                        Screen.Reader.createRoute(documentId, page)
+                    )
                 }
             )
         }
@@ -35,12 +50,18 @@ fun GlyphoraNavGraph(
         composable(
             route = Screen.Reader.route,
             arguments = listOf(
-                navArgument("documentId") { type = NavType.StringType }
+                navArgument("documentId") { type = NavType.StringType },
+                navArgument("initialPage") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
             )
         ) { backStackEntry ->
             val documentId = backStackEntry.arguments?.getString("documentId").orEmpty()
+            val requestedPage = backStackEntry.arguments?.getInt("initialPage", -1) ?: -1
             ReaderScreen(
                 documentId = documentId,
+                initialPage = requestedPage.takeIf { it >= 0 },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) }
             )

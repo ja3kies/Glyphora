@@ -40,6 +40,7 @@ fun ReaderScreen(
     documentId: String,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
+    initialPage: Int? = null,
     viewModel: ReaderViewModel = viewModel()
 ) {
     val contentState by viewModel.contentState.collectAsState()
@@ -48,8 +49,8 @@ fun ReaderScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(documentId) {
-        viewModel.loadDocument(documentId)
+    LaunchedEffect(documentId, initialPage) {
+        viewModel.loadDocument(documentId, initialPage)
     }
 
     Scaffold(
@@ -72,9 +73,13 @@ fun ReaderScreen(
                 actions = {
                     IconButton(
                         onClick = {
-                            viewModel.addBookmark("Marque-page", document?.currentPage ?: 0)
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Marque-page ajouté")
+                            viewModel.addBookmark("Marque-page", document?.currentPage ?: 0) { success ->
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (success) "Marque-page ajoute"
+                                        else "Impossible d'ajouter le marque-page"
+                                    )
+                                }
                             }
                         }
                     ) {
@@ -117,7 +122,9 @@ fun ReaderScreen(
                             htmlContent = currentChapter.contentHtml,
                             settings = settings,
                             onScrollProgressChanged = { progress ->
-                                viewModel.onPageChanged(state.currentChapterIndex, state.data.chapters.size)
+                                val total = state.data.chapters.size.coerceAtLeast(1)
+                                val overallProgress = (state.currentChapterIndex + progress.coerceIn(0f, 1f)) / total.toFloat()
+                                viewModel.onEpubProgressChanged(state.currentChapterIndex, total, overallProgress)
                             }
                         )
                     }

@@ -9,6 +9,11 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import android.util.Log
+import androidx.room.withTransaction
+import com.glyphora.data.local.GlyphoraDatabase
+import com.glyphora.data.local.toDomain
+import com.glyphora.data.local.toEntity
 import com.glyphora.data.parsers.EpubParser
 import com.glyphora.data.parsers.HtmlParser
 import com.glyphora.data.parsers.PdfRendererEngine
@@ -22,20 +27,20 @@ import com.glyphora.domain.model.ReaderThemeMode
 import com.glyphora.domain.model.ReadingProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private val Context.dataStore by preferencesDataStore(name = "glyphora_settings")
 
 class DocumentRepositoryImpl(
-    private val context: Context
+    private val context: Context,
+    private val database: GlyphoraDatabase
 ) : DocumentRepository {
 
-    private val documentsState = MutableStateFlow<List<Document>>(emptyList())
-    private val bookmarksState = MutableStateFlow<List<Bookmark>>(emptyList())
+    private val documentDao = database.documentDao()
+    private val bookmarkDao = database.bookmarkDao()
 
     private val epubParser = EpubParser()
     private val htmlParser = HtmlParser()
@@ -50,10 +55,21 @@ class DocumentRepositoryImpl(
         val HORIZONTAL_MARGIN = intPreferencesKey("reader_horizontal_margin")
     }
 
-    override fun getDocuments(): Flow<List<Document>> = documentsState
+    override fun getDocuments(): Flow<List<Document>> =
+        documentDao.getAllDocuments()
+            .map { list -> list.map { it.toDomain() } }
+            .catch { e ->
+                Log.e(TAG, "Lecture de la bibliothèque impossible", e)
+                emit(emptyList())
+            }
 
-    override suspend fun getDocumentById(id: String): Document? {
-        return documentsState.value.firstOrNull { it.id == id }
+    override suspend fun getDocumentById(id: String): Document? = withContext(Dispatchers.IO) {
+        try {
+            documentDao.getDocumentById(id)?.toDomain()
+        } catch (e: Exception) {
+            Log.e(TAG, "Lecture du document $id impossible", e)
+            null
+        }
     }
 
     override suspend fun importDocument(uri: Uri): Result<Document> = withContext(Dispatchers.IO) {
@@ -64,6 +80,13 @@ class DocumentRepositoryImpl(
                 context.contentResolver.takePersistableUriPermission(uri, takeFlags)
             } catch (e: Exception) {
                 // Ignore si déjà accordé ou non applicable
+            }
+
+            // Document déjà connu : on conserve son identifiant, sa progression et ses signets
+            documentDao.getDocumentByUri(uri.toString())?.let { existing ->
+                val now = System.currentTimeMillis()
+                documentDao.updateLastOpened(existing.id, now)
+                return@runCatching existing.copy(lastOpenedTimestamp = now).toDomain()
             }
 
             var fileName = "Document inconnu"
@@ -104,46 +127,70 @@ class DocumentRepositoryImpl(
                 author = metadata?.author
             )
 
-            documentsState.update { current ->
-                listOf(doc) + current.filterNot { it.uriString == uri.toString() }
-            }
+            documentDao.insertDocument(doc.toEntity())
 
             doc
         }
     }
 
     override suspend fun deleteDocument(id: String) {
-        documentsState.update { current -> current.filterNot { it.id == id } }
-        bookmarksState.update { current -> current.filterNot { it.documentId == id } }
-    }
-
-    override suspend fun updateReadingProgress(progress: ReadingProgress) {
-        documentsState.update { current ->
-            current.map { doc ->
-                if (doc.id == progress.documentId) {
-                    doc.copy(
-                        currentPage = progress.currentPage,
-                        totalPages = progress.totalPages,
-                        readingProgressPercent = progress.progressPercent,
-                        lastOpenedTimestamp = System.currentTimeMillis()
-                    )
-                } else {
-                    doc
+        withContext(Dispatchers.IO) {
+            try {
+                // Signets et document supprimés ensemble, ou pas du tout
+                database.withTransaction {
+                    bookmarkDao.deleteBookmarksForDocument(id)
+                    documentDao.deleteDocument(id)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Suppression du document $id impossible", e)
             }
         }
     }
 
-    override fun getBookmarks(documentId: String): Flow<List<Bookmark>> {
-        return bookmarksState.map { list -> list.filter { it.documentId == documentId } }
+    override suspend fun updateReadingProgress(progress: ReadingProgress) {
+        withContext(Dispatchers.IO) {
+            try {
+                database.withTransaction {
+                    documentDao.updateReadingProgress(
+                        id = progress.documentId,
+                        progress = progress.progressPercent,
+                        currentPage = progress.currentPage,
+                        totalPages = progress.totalPages
+                    )
+                    documentDao.updateLastOpened(progress.documentId, System.currentTimeMillis())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Enregistrement de la progression impossible", e)
+            }
+        }
     }
 
+    override fun getBookmarks(documentId: String): Flow<List<Bookmark>> =
+        bookmarkDao.getBookmarks(documentId)
+            .map { list -> list.map { it.toDomain() } }
+            .catch { e ->
+                Log.e(TAG, "Lecture des signets impossible", e)
+                emit(emptyList())
+            }
+
+    override fun getAllBookmarks(): Flow<List<Bookmark>> =
+        bookmarkDao.getAllBookmarks()
+            .map { list -> list.map { it.toDomain() } }
+            .catch { e ->
+                Log.e(TAG, "Lecture de tous les signets impossible", e)
+                emit(emptyList())
+            }
+
     override suspend fun addBookmark(bookmark: Bookmark) {
-        bookmarksState.update { it + bookmark }
+        withContext(Dispatchers.IO) {
+            bookmarkDao.insertBookmark(bookmark.toEntity())
+        }
     }
 
     override suspend fun removeBookmark(bookmarkId: String) {
-        bookmarksState.update { it.filterNot { bm -> bm.id == bookmarkId } }
+        withContext(Dispatchers.IO) {
+            bookmarkDao.deleteBookmark(bookmarkId)
+        }
     }
 
     override fun getReaderSettings(): Flow<ReaderSettings> {
@@ -172,5 +219,9 @@ class DocumentRepositoryImpl(
             prefs[PreferencesKeys.LINE_HEIGHT] = settings.lineHeightMultiplier
             prefs[PreferencesKeys.HORIZONTAL_MARGIN] = settings.horizontalMarginDp
         }
+    }
+
+    private companion object {
+        const val TAG = "DocumentRepository"
     }
 }

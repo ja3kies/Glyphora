@@ -51,7 +51,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     private var activePdfEngine: PdfRendererEngine? = null
 
-    fun loadDocument(documentId: String) {
+    fun loadDocument(documentId: String, initialPage: Int? = null) {
         viewModelScope.launch {
             _contentState.value = ReaderContentState.Loading
             val doc = repository.getDocumentById(documentId)
@@ -59,7 +59,8 @@ class ReaderViewModel @JvmOverloads constructor(
                 _contentState.value = ReaderContentState.Error("Document introuvable")
                 return@launch
             }
-            _currentDocument.value = doc
+            val requestedPage = (initialPage ?: doc.currentPage).coerceAtLeast(0)
+            _currentDocument.value = doc.copy(currentPage = requestedPage)
             val uri = Uri.parse(doc.uriString)
             val context = getApplication<Application>()
 
@@ -67,20 +68,30 @@ class ReaderViewModel @JvmOverloads constructor(
                 when (doc.format) {
                     DocumentFormat.EPUB -> {
                         val bookData = EpubParser().parseEpub(context, uri)
+                        val chapterIndex = if (bookData.chapters.isNotEmpty()) {
+                            requestedPage.coerceIn(0, bookData.chapters.lastIndex)
+                        } else {
+                            0
+                        }
                         _contentState.value = ReaderContentState.Epub(
                             data = bookData,
-                            currentChapterIndex = doc.currentPage.coerceIn(0, bookData.chapters.size - 1)
+                            currentChapterIndex = chapterIndex
                         )
+                        onPageChanged(chapterIndex, bookData.chapters.size)
                     }
                     DocumentFormat.PDF -> {
                         val engine = PdfRendererEngine(context, uri).apply { initialize() }
                         activePdfEngine?.close()
                         activePdfEngine = engine
+                        val pageIndex = requestedPage.coerceAtMost(
+                            (engine.pageCount - 1).coerceAtLeast(0)
+                        )
                         _contentState.value = ReaderContentState.Pdf(
                             engine = engine,
                             totalPages = engine.pageCount,
-                            initialPage = doc.currentPage
+                            initialPage = pageIndex
                         )
+                        onPageChanged(pageIndex, engine.pageCount)
                     }
                     DocumentFormat.HTML -> {
                         val htmlData = HtmlParser().parseHtml(context, uri)
@@ -88,10 +99,14 @@ class ReaderViewModel @JvmOverloads constructor(
                     }
                     DocumentFormat.TXT -> {
                         val txtData = TxtEngine().loadDocument(context, uri)
+                        val pageIndex = requestedPage.coerceAtMost(
+                            (txtData.pages.size - 1).coerceAtLeast(0)
+                        )
                         _contentState.value = ReaderContentState.Txt(
                             data = txtData,
-                            initialPage = doc.currentPage
+                            initialPage = pageIndex
                         )
+                        onPageChanged(pageIndex, txtData.pages.size)
                     }
                 }
             } catch (e: Exception) {
@@ -100,9 +115,18 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
 
-    fun onPageChanged(page: Int, total: Int) {
+    fun onEpubProgressChanged(chapterIndex: Int, totalChapters: Int, overallProgress: Float) {
         val doc = _currentDocument.value ?: return
-        val percent = if (total > 0) page.toFloat() / total.toFloat() else 0f
+        val total = totalChapters.coerceAtLeast(0)
+        val page = if (total > 0) chapterIndex.coerceIn(0, total - 1) else 0
+        val percent = overallProgress.coerceIn(0f, 1f)
+
+        _currentDocument.value = doc.copy(
+            currentPage = page,
+            totalPages = total,
+            readingProgressPercent = percent
+        )
+
         viewModelScope.launch {
             repository.updateReadingProgress(
                 ReadingProgress(
@@ -115,17 +139,53 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
 
-    fun addBookmark(title: String, page: Int) {
+    fun onPageChanged(page: Int, total: Int) {
         val doc = _currentDocument.value ?: return
+        val safeTotal = total.coerceAtLeast(0)
+        val safePage = if (safeTotal > 0) page.coerceIn(0, safeTotal - 1) else 0
+        val percent = if (safeTotal > 0) {
+            (safePage + 1).toFloat() / safeTotal.toFloat()
+        } else {
+            0f
+        }
+
+        _currentDocument.value = doc.copy(
+            currentPage = safePage,
+            totalPages = safeTotal,
+            readingProgressPercent = percent
+        )
+
         viewModelScope.launch {
-            repository.addBookmark(
-                Bookmark(
-                    id = UUID.randomUUID().toString(),
+            repository.updateReadingProgress(
+                ReadingProgress(
                     documentId = doc.id,
-                    title = title,
-                    pageIndex = page
+                    currentPage = safePage,
+                    totalPages = safeTotal,
+                    progressPercent = percent
                 )
             )
+        }
+    }
+
+    fun addBookmark(title: String, page: Int, onResult: (Boolean) -> Unit = {}) {
+        val doc = _currentDocument.value
+        if (doc == null) {
+            onResult(false)
+            return
+        }
+
+        viewModelScope.launch {
+            val result = runCatching {
+                repository.addBookmark(
+                    Bookmark(
+                        id = UUID.randomUUID().toString(),
+                        documentId = doc.id,
+                        title = title,
+                        pageIndex = page.coerceAtLeast(0)
+                    )
+                )
+            }
+            onResult(result.isSuccess)
         }
     }
 
