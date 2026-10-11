@@ -18,10 +18,10 @@ class LibraryViewModel(
     val documents: StateFlow<List<Document>> = repository.getDocuments()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun importDocument(uri: Uri, onImported: (Document) -> Unit = {}) {
+    /** L'import n'ouvre pas le document : l'appelant reçoit le résultat (succès ou échec) pour informer l'utilisateur. */
+    fun importDocument(uri: Uri, onResult: (Result<Document>) -> Unit = {}) {
         viewModelScope.launch {
-            val result = repository.importDocument(uri)
-            result.getOrNull()?.let { onImported(it) }
+            onResult(repository.importDocument(uri))
         }
     }
 

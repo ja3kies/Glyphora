@@ -2,6 +2,7 @@ package com.glyphora.presentation.reader
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.glyphora.GlyphoraApplication
@@ -18,10 +19,17 @@ import com.glyphora.domain.model.Document
 import com.glyphora.domain.model.DocumentFormat
 import com.glyphora.domain.model.ReaderSettings
 import com.glyphora.domain.model.ReadingProgress
+import com.glyphora.domain.model.positionLabel
+import com.glyphora.domain.model.progressFraction
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -29,10 +37,21 @@ import java.util.UUID
 sealed class ReaderContentState {
     data object Loading : ReaderContentState()
     data class Error(val message: String) : ReaderContentState()
-    data class Epub(val data: EpubBookData, val currentChapterIndex: Int = 0) : ReaderContentState()
+    data class Epub(
+        val data: EpubBookData,
+        val currentChapterIndex: Int = 0,
+        val initialChapterProgress: Float = 0f
+    ) : ReaderContentState()
     data class Pdf(val engine: PdfRendererEngine, val totalPages: Int, val initialPage: Int) : ReaderContentState()
     data class Html(val data: HtmlDocumentData) : ReaderContentState()
     data class Txt(val data: TxtDocumentData, val initialPage: Int) : ReaderContentState()
+}
+
+/** Retours ponctuels affichés par l'écran de lecture (une seule fois, sans être rejoués à la rotation). */
+sealed interface ReaderEvent {
+    data class BookmarkAdded(val positionLabel: String) : ReaderEvent
+    data class BookmarkAlreadyExists(val positionLabel: String) : ReaderEvent
+    data object BookmarkFailed : ReaderEvent
 }
 
 class ReaderViewModel @JvmOverloads constructor(
@@ -49,17 +68,47 @@ class ReaderViewModel @JvmOverloads constructor(
     val settings: StateFlow<ReaderSettings> = repository.getReaderSettings()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ReaderSettings())
 
+    private val _events = Channel<ReaderEvent>(Channel.BUFFERED)
+    val events: Flow<ReaderEvent> = _events.receiveAsFlow()
+
     private var activePdfEngine: PdfRendererEngine? = null
 
-    fun loadDocument(documentId: String) {
+    // Position réellement affichée (index à partir de 0), tenue à jour par onPageChanged
+    private var currentPageIndex: Int = 0
+    private var currentTotalPages: Int = 0
+    private val epubProgressWriter = DebouncedProgressWriter<ReadingProgress>(
+        scope = viewModelScope,
+        debounceMillis = EPUB_PROGRESS_DEBOUNCE_MS,
+        write = repository::updateReadingProgress
+    )
+
+    // La page demandée (ex. depuis un marque-page) ne vaut que pour la première ouverture :
+    // un rechargement après un passage par les paramètres reprend la progression enregistrée.
+    private var startPageConsumed = false
+
+    fun loadDocument(documentId: String, requestedPage: Int? = null) {
+        val startPageOverride = if (startPageConsumed) null else requestedPage
+        startPageConsumed = true
         viewModelScope.launch {
             _contentState.value = ReaderContentState.Loading
-            val doc = repository.getDocumentById(documentId)
+            val doc = try {
+                repository.getDocumentById(documentId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _contentState.value = ReaderContentState.Error(
+                    "Impossible de récupérer le document : ${e.localizedMessage}"
+                )
+                return@launch
+            }
             if (doc == null) {
                 _contentState.value = ReaderContentState.Error("Document introuvable")
                 return@launch
             }
             _currentDocument.value = doc
+            val startPage = (startPageOverride ?: doc.currentPage).coerceAtLeast(0)
+            currentPageIndex = startPage
+            currentTotalPages = doc.totalPages
             val uri = Uri.parse(doc.uriString)
             val context = getApplication<Application>()
 
@@ -67,9 +116,20 @@ class ReaderViewModel @JvmOverloads constructor(
                 when (doc.format) {
                     DocumentFormat.EPUB -> {
                         val bookData = EpubParser().parseEpub(context, uri)
+                        if (bookData.chapters.isEmpty()) {
+                            _contentState.value = ReaderContentState.Error(
+                                "Ce fichier EPUB ne contient aucun chapitre lisible."
+                            )
+                            return@launch
+                        }
                         _contentState.value = ReaderContentState.Epub(
                             data = bookData,
-                            currentChapterIndex = doc.currentPage.coerceIn(0, bookData.chapters.size - 1)
+                            currentChapterIndex = startPage.coerceIn(0, bookData.chapters.lastIndex),
+                            initialChapterProgress = if (startPageOverride != null) {
+                                0f
+                            } else {
+                                doc.chapterProgress.coerceIn(0f, 1f)
+                            }
                         )
                     }
                     DocumentFormat.PDF -> {
@@ -79,7 +139,7 @@ class ReaderViewModel @JvmOverloads constructor(
                         _contentState.value = ReaderContentState.Pdf(
                             engine = engine,
                             totalPages = engine.pageCount,
-                            initialPage = doc.currentPage
+                            initialPage = startPage
                         )
                     }
                     DocumentFormat.HTML -> {
@@ -90,10 +150,12 @@ class ReaderViewModel @JvmOverloads constructor(
                         val txtData = TxtEngine().loadDocument(context, uri)
                         _contentState.value = ReaderContentState.Txt(
                             data = txtData,
-                            initialPage = doc.currentPage
+                            initialPage = startPage
                         )
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _contentState.value = ReaderContentState.Error("Erreur d'ouverture : ${e.localizedMessage}")
             }
@@ -102,30 +164,70 @@ class ReaderViewModel @JvmOverloads constructor(
 
     fun onPageChanged(page: Int, total: Int) {
         val doc = _currentDocument.value ?: return
-        val percent = if (total > 0) page.toFloat() / total.toFloat() else 0f
+        currentPageIndex = page
+        currentTotalPages = total
         viewModelScope.launch {
-            repository.updateReadingProgress(
+            persistProgress(
                 ReadingProgress(
                     documentId = doc.id,
                     currentPage = page,
                     totalPages = total,
-                    progressPercent = percent
+                    progressPercent = progressFraction(page, total)
                 )
             )
         }
     }
 
-    fun addBookmark(title: String, page: Int) {
+    fun onEpubProgressChanged(chapterIndex: Int, totalChapters: Int, progress: Float) {
         val doc = _currentDocument.value ?: return
+        currentPageIndex = chapterIndex
+        currentTotalPages = totalChapters
+        val progress = ReadingProgress(
+            documentId = doc.id,
+            currentPage = chapterIndex,
+            totalPages = totalChapters,
+            progressPercent = progressFraction(chapterIndex, totalChapters),
+            chapterProgress = progress.coerceIn(0f, 1f)
+        )
+        epubProgressWriter.schedule(progress)
+    }
+
+    suspend fun flushPendingProgress() {
+        epubProgressWriter.flush()
+    }
+
+    private suspend fun persistProgress(progress: ReadingProgress) {
+        repository.updateReadingProgress(progress)
+    }
+
+    fun addBookmark() {
+        val doc = _currentDocument.value ?: return
+        val pageIndex = currentPageIndex
+        val total = if (currentTotalPages > 0) currentTotalPages else doc.totalPages
+        val label = positionLabel(doc.format, pageIndex, total)
         viewModelScope.launch {
-            repository.addBookmark(
-                Bookmark(
-                    id = UUID.randomUUID().toString(),
-                    documentId = doc.id,
-                    title = title,
-                    pageIndex = page
+            try {
+                val alreadySaved = repository.getBookmarks(doc.id).first()
+                    .any { it.pageIndex == pageIndex }
+                if (alreadySaved) {
+                    _events.send(ReaderEvent.BookmarkAlreadyExists(label))
+                    return@launch
+                }
+                repository.addBookmark(
+                    Bookmark(
+                        id = UUID.randomUUID().toString(),
+                        documentId = doc.id,
+                        title = label,
+                        pageIndex = pageIndex
+                    )
                 )
-            )
+                _events.send(ReaderEvent.BookmarkAdded(label))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("ReaderViewModel", "Ajout du marque-page impossible", e)
+                _events.send(ReaderEvent.BookmarkFailed)
+            }
         }
     }
 
@@ -133,5 +235,9 @@ class ReaderViewModel @JvmOverloads constructor(
         super.onCleared()
         activePdfEngine?.close()
         activePdfEngine = null
+    }
+
+    private companion object {
+        const val EPUB_PROGRESS_DEBOUNCE_MS = 500L
     }
 }

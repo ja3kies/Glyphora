@@ -1,6 +1,7 @@
 package com.glyphora.presentation.reader.epub
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
@@ -16,12 +17,52 @@ import com.glyphora.core.theme.SepiaOnSurface
 import com.glyphora.domain.model.ReaderSettings
 import com.glyphora.domain.model.ReaderThemeMode
 
+private class ProgressWebView(context: Context) : WebView(context) {
+    var onProgressChanged: (Float) -> Unit = {}
+    var initialProgress: Float = 0f
+    var loadedHtml: String? = null
+    private var lastReportedProgress = -1f
+    private var restoringPosition = true
+    private var currentProgress = 0f
+    private var hasRestoredOnce = false
+
+    fun prepareForLoad() {
+        restoringPosition = true
+    }
+
+    override fun onScrollChanged(scrollX: Int, scrollY: Int, oldScrollX: Int, oldScrollY: Int) {
+        super.onScrollChanged(scrollX, scrollY, oldScrollX, oldScrollY)
+        if (restoringPosition) return
+        val scrollRange = (contentHeight * scale - height).coerceAtLeast(0f)
+        val progress = if (scrollRange == 0f) 0f else (scrollY / scrollRange).coerceIn(0f, 1f)
+        if (progress != lastReportedProgress) {
+            lastReportedProgress = progress
+            currentProgress = progress
+            onProgressChanged(progress)
+        }
+    }
+
+    fun restorePositionAfterLoad() {
+        restoringPosition = true
+        post {
+            val scrollRange = (contentHeight * scale - height).coerceAtLeast(0f)
+            val progress = (if (hasRestoredOnce) currentProgress else initialProgress).coerceIn(0f, 1f)
+            scrollTo(scrollX, (scrollRange * progress).toInt())
+            currentProgress = progress
+            hasRestoredOnce = true
+            lastReportedProgress = progress
+            restoringPosition = false
+        }
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun EpubReaderView(
     htmlContent: String,
     settings: ReaderSettings,
     modifier: Modifier = Modifier,
+    initialProgress: Float = 0f,
     onScrollProgressChanged: (Float) -> Unit = {}
 ) {
     // Calcul des styles CSS injectés pour respecter la personnalisation utilisateur tout en conservant le CSS d'origine
@@ -68,18 +109,28 @@ fun EpubReaderView(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
-                WebView(context).apply {
+                ProgressWebView(context).apply {
                     this.settings.javaScriptEnabled = false
                     this.settings.blockNetworkLoads = true
                     this.settings.loadWithOverviewMode = true
                     this.settings.useWideViewPort = false
                     this.settings.builtInZoomControls = true
                     this.settings.displayZoomControls = false
-                    webViewClient = WebViewClient()
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            (view as? ProgressWebView)?.restorePositionAfterLoad()
+                        }
+                    }
                 }
             },
             update = { webView ->
-                webView.loadDataWithBaseURL(null, styledHtml, "text/html", "UTF-8", null)
+                webView.onProgressChanged = onScrollProgressChanged
+                webView.initialProgress = initialProgress
+                if (webView.loadedHtml != styledHtml) {
+                    webView.loadedHtml = styledHtml
+                    webView.prepareForLoad()
+                    webView.loadDataWithBaseURL(null, styledHtml, "text/html", "UTF-8", null)
+                }
             }
         )
     }

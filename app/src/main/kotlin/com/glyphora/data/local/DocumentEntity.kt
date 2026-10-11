@@ -1,6 +1,7 @@
 package com.glyphora.data.local
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "documents")
@@ -15,5 +16,7 @@ data class DocumentEntity(
     val readingProgressPercent: Float = 0f,
     val currentPage: Int = 0,
     val totalPages: Int = 0,
+    @ColumnInfo(defaultValue = "0.0")
+    val chapterProgress: Float = 0f,
     val author: String? = null
 )

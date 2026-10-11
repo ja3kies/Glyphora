@@ -155,7 +155,8 @@ class DocumentRepositoryImpl(
                         id = progress.documentId,
                         progress = progress.progressPercent,
                         currentPage = progress.currentPage,
-                        totalPages = progress.totalPages
+                        totalPages = progress.totalPages,
+                        chapterProgress = progress.chapterProgress.coerceIn(0f, 1f)
                     )
                     documentDao.updateLastOpened(progress.documentId, System.currentTimeMillis())
                 }
@@ -173,13 +174,18 @@ class DocumentRepositoryImpl(
                 emit(emptyList())
             }
 
+    override fun getAllBookmarks(): Flow<List<Bookmark>> =
+        bookmarkDao.getAllBookmarks()
+            .map { list -> list.map { it.toDomain() } }
+            .catch { e ->
+                Log.e(TAG, "Lecture de tous les signets impossible", e)
+                emit(emptyList())
+            }
+
+    // L'exception est volontairement propagée : l'appelant ne doit confirmer l'ajout qu'une fois le signet réellement enregistré.
     override suspend fun addBookmark(bookmark: Bookmark) {
         withContext(Dispatchers.IO) {
-            try {
-                bookmarkDao.insertBookmark(bookmark.toEntity())
-            } catch (e: Exception) {
-                Log.e(TAG, "Ajout du signet impossible", e)
-            }
+            bookmarkDao.insertBookmark(bookmark.toEntity())
         }
     }
 

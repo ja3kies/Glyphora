@@ -17,5 +17,6 @@
     <string name="settings_font_family">Police d\'écriture</string>
     <string name="settings_line_height">Interligne</string>
     <string name="bookmarks_title">Marque-pages</string>
+    <string name="bookmarks_empty">Aucun marque-page pour l\'instant.\nAppuyez sur l\'icône marque-page dans le lecteur pour en ajouter un.</string>
     <string name="table_of_contents">Table des matières</string>
 </resources>

@@ -32,8 +32,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.glyphora.domain.model.DocumentFormat
 import com.glyphora.domain.model.ReaderFontFamily
 import com.glyphora.domain.model.ReaderSettings
+import com.glyphora.domain.model.progressLabel
 
 @Composable
 fun TxtReaderView(
@@ -93,41 +95,43 @@ fun TxtReaderView(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
             )
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            Column(
+                modifier = Modifier.padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                IconButton(
-                    onClick = { if (currentPage > 0) currentPage-- },
-                    enabled = currentPage > 0
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Page précédente")
-                }
-
-                if (pages.size > 1) {
-                    Slider(
-                        value = currentPage.toFloat(),
-                        onValueChange = { currentPage = it.toInt() },
-                        valueRange = 0f..(pages.size - 1).toFloat(),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                    )
-                }
-
                 Text(
-                    text = "${currentPage + 1}/${pages.size.coerceAtLeast(1)}",
+                    text = progressLabel(DocumentFormat.TXT, currentPage, pages.size),
                     style = MaterialTheme.typography.labelMedium
                 )
-
-                IconButton(
-                    onClick = { if (currentPage < pages.size - 1) currentPage++ },
-                    enabled = currentPage < pages.size - 1
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Page suivante")
+                    IconButton(
+                        onClick = { if (currentPage > 0) currentPage-- },
+                        enabled = currentPage > 0
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Page précédente")
+                    }
+
+                    if (pages.size > 1) {
+                        Slider(
+                            value = currentPage.toFloat(),
+                            onValueChange = { currentPage = it.toInt() },
+                            valueRange = 0f..(pages.size - 1).toFloat(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { if (currentPage < pages.size - 1) currentPage++ },
+                        enabled = currentPage < pages.size - 1
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Page suivante")
+                    }
                 }
             }
         }

@@ -35,13 +35,15 @@ interface DocumentDao {
         UPDATE documents
         SET readingProgressPercent = :progress,
             currentPage = :currentPage,
-            totalPages = :totalPages
+            totalPages = :totalPages,
+            chapterProgress = :chapterProgress
         WHERE id = :id
     """)
     suspend fun updateReadingProgress(
         id: String,
         progress: Float,
         currentPage: Int,
-        totalPages: Int
+        totalPages: Int,
+        chapterProgress: Float
     )
 }

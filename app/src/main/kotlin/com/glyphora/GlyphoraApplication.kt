@@ -4,6 +4,7 @@ package com.glyphora
 import android.app.Application
 import androidx.room.Room
 import com.glyphora.data.local.GlyphoraDatabase
+import com.glyphora.data.local.MIGRATION_1_2
 import com.glyphora.data.repository.DocumentRepository
 import com.glyphora.data.repository.DocumentRepositoryImpl
 
@@ -23,7 +24,7 @@ class GlyphoraApplication : Application() {
             applicationContext,
             GlyphoraDatabase::class.java,
             "glyphora.db"
-        ).build()
+        ).addMigrations(MIGRATION_1_2).build()
 
         documentRepository = DocumentRepositoryImpl(
             context = applicationContext,

@@ -5,5 +5,6 @@ data class ReadingProgress(
     val currentPage: Int,
     val totalPages: Int,
     val scrollOffset: Int = 0,
-    val progressPercent: Float = 0f
+    val progressPercent: Float = 0f,
+    val chapterProgress: Float = 0f
 )

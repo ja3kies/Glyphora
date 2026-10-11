@@ -10,5 +10,6 @@ data class Document(
     val readingProgressPercent: Float = 0f,
     val currentPage: Int = 0,
     val totalPages: Int = 0,
+    val chapterProgress: Float = 0f,
     val author: String? = null
 )

@@ -14,6 +14,7 @@ fun DocumentEntity.toDomain(): Document = Document(
     readingProgressPercent = readingProgressPercent,
     currentPage = currentPage,
     totalPages = totalPages,
+    chapterProgress = chapterProgress.coerceIn(0f, 1f),
     author = author
 )
 
@@ -27,6 +28,7 @@ fun Document.toEntity(): DocumentEntity = DocumentEntity(
     readingProgressPercent = readingProgressPercent,
     currentPage = currentPage,
     totalPages = totalPages,
+    chapterProgress = chapterProgress.coerceIn(0f, 1f),
     author = author
 )
 

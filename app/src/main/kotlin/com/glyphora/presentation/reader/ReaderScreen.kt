@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -14,12 +15,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -28,6 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.glyphora.presentation.reader.epub.EpubReaderView
 import com.glyphora.presentation.reader.html.HtmlReaderView
 import com.glyphora.presentation.reader.pdf.PdfReaderView
@@ -40,16 +48,56 @@ fun ReaderScreen(
     documentId: String,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    startPage: Int? = null,
     viewModel: ReaderViewModel = viewModel()
 ) {
     val contentState by viewModel.contentState.collectAsState()
     val document by viewModel.currentDocument.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+    val coroutineScope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                coroutineScope.launch { viewModel.flushPendingProgress() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    BackHandler {
+        coroutineScope.launch {
+            viewModel.flushPendingProgress()
+            onBack()
+        }
+    }
 
     LaunchedEffect(documentId) {
-        viewModel.loadDocument(documentId)
+        viewModel.loadDocument(documentId, startPage)
+    }
+
+    // Retour visuel après une tentative d'ajout de marque-page
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            val message = when (event) {
+                is ReaderEvent.BookmarkAdded -> "Marque-page ajouté · ${event.positionLabel}"
+                is ReaderEvent.BookmarkAlreadyExists -> "Marque-page déjà enregistré · ${event.positionLabel}"
+                is ReaderEvent.BookmarkFailed -> "Impossible d'ajouter le marque-page"
+            }
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = if (event is ReaderEvent.BookmarkFailed) null else "Voir",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.flushPendingProgress()
+                onOpenBookmarks()
+            }
+        }
     }
 
     Scaffold(
@@ -65,22 +113,33 @@ fun ReaderScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            viewModel.flushPendingProgress()
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            viewModel.addBookmark("Marque-page", document?.currentPage ?: 0)
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Marque-page ajouté")
-                            }
-                        }
-                    ) {
+                    IconButton(onClick = { viewModel.addBookmark() }) {
                         Icon(Icons.Default.BookmarkAdd, contentDescription = "Ajouter un marque-page")
                     }
-                    IconButton(onClick = onOpenSettings) {
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            viewModel.flushPendingProgress()
+                            onOpenBookmarks()
+                        }
+                    }) {
+                        Icon(Icons.Default.Bookmarks, contentDescription = "Mes marque-pages")
+                    }
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            viewModel.flushPendingProgress()
+                            onOpenSettings()
+                        }
+                    }) {
                         Icon(Icons.Default.Settings, contentDescription = "Paramètres de lecture")
                     }
                 },
@@ -116,8 +175,13 @@ fun ReaderScreen(
                         EpubReaderView(
                             htmlContent = currentChapter.contentHtml,
                             settings = settings,
+                            initialProgress = state.initialChapterProgress,
                             onScrollProgressChanged = { progress ->
-                                viewModel.onPageChanged(state.currentChapterIndex, state.data.chapters.size)
+                                viewModel.onEpubProgressChanged(
+                                    state.currentChapterIndex,
+                                    state.data.chapters.size,
+                                    progress
+                                )
                             }
                         )
                     }

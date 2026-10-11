@@ -20,6 +20,8 @@ interface DocumentRepository {
 
     fun getBookmarks(documentId: String): Flow<List<Bookmark>>
 
+    fun getAllBookmarks(): Flow<List<Bookmark>>
+
     suspend fun addBookmark(bookmark: Bookmark)
 
     suspend fun removeBookmark(bookmarkId: String)

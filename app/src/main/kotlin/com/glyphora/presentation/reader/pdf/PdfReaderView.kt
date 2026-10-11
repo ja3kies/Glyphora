@@ -38,6 +38,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.glyphora.data.parsers.PdfRendererEngine
+import com.glyphora.domain.model.DocumentFormat
+import com.glyphora.domain.model.progressLabel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -131,7 +133,7 @@ fun PdfReaderView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Page ${currentPage + 1} / $totalPages",
+                    text = progressLabel(DocumentFormat.PDF, currentPage, totalPages),
                     style = MaterialTheme.typography.labelMedium
                 )
                 Row(
