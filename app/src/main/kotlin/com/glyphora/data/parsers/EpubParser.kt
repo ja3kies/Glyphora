@@ -2,6 +2,7 @@ package com.glyphora.data.parsers
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.glyphora.domain.model.DocumentFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,12 +17,20 @@ data class EpubChapter(
     val id: String,
     val title: String,
     val contentHref: String,
-    val contentHtml: String
+    val contentHtml: String,
+    val contentPath: String = contentHref
+)
+
+data class EpubResource(
+    val bytes: ByteArray,
+    val mimeType: String,
+    val charset: String? = null
 )
 
 data class EpubBookData(
     val metadata: ParsedMetadata,
-    val chapters: List<EpubChapter>
+    val chapters: List<EpubChapter>,
+    val resources: Map<String, EpubResource> = emptyMap()
 )
 
 class EpubParser : DocumentParser {
@@ -60,8 +69,6 @@ class EpubParser : DocumentParser {
         }
 
         val opfBytes = zipFiles[opfPath] ?: throw IllegalStateException("Fichier OPF introuvable dans l'EPUB")
-        val opfDir = if (opfPath.contains("/")) opfPath.substringBeforeLast("/") + "/" else ""
-
         // 3. Parser les métadonnées et la structure manifest/spine depuis l'OPF
         val (metadata, manifest, spine) = parseOpf(ByteArrayInputStream(opfBytes))
 
@@ -70,7 +77,11 @@ class EpubParser : DocumentParser {
         spine.forEachIndexed { index, itemId ->
             val href = manifest[itemId]
             if (href != null) {
-                val fullPath = opfDir + href
+                val fullPath = EpubResourcePathResolver.resolve(opfPath, href)
+                if (fullPath == null) {
+                    Log.w(TAG, "Ignoring unsafe or invalid EPUB chapter href: $href")
+                    return@forEachIndexed
+                }
                 val contentBytes = zipFiles[fullPath]
                 if (contentBytes != null) {
                     val html = String(contentBytes, Charsets.UTF_8)
@@ -79,10 +90,15 @@ class EpubParser : DocumentParser {
                             id = itemId,
                             title = "Chapitre ${index + 1}",
                             contentHref = href,
-                            contentHtml = html
+                            contentHtml = html,
+                            contentPath = fullPath
                         )
                     )
+                } else {
+                    Log.w(TAG, "EPUB spine chapter is missing from archive: $fullPath")
                 }
+            } else {
+                Log.w(TAG, "EPUB spine references missing manifest id: $itemId")
             }
         }
 
@@ -92,7 +108,12 @@ class EpubParser : DocumentParser {
 
         EpubBookData(
             metadata = updatedMetadata,
-            chapters = chapters
+            chapters = chapters,
+            resources = zipFiles.mapValues { (path, bytes) ->
+                val extension = path.substringAfterLast('.', "").lowercase()
+                val (mimeType, charset) = MIME_TYPES[extension] ?: ("application/octet-stream" to null)
+                EpubResource(bytes = bytes, mimeType = mimeType, charset = charset)
+            }
         )
     }
 
@@ -115,6 +136,30 @@ class EpubParser : DocumentParser {
         val manifest: Map<String, String>,
         val spine: List<String>
     )
+
+    private companion object {
+        const val TAG = "EpubParser"
+        val MIME_TYPES = mapOf(
+            "css" to ("text/css" to "UTF-8"),
+            "html" to ("text/html" to "UTF-8"),
+            "htm" to ("text/html" to "UTF-8"),
+            "xhtml" to ("application/xhtml+xml" to "UTF-8"),
+            "xml" to ("application/xml" to "UTF-8"),
+            "ncx" to ("application/x-dtbncx+xml" to "UTF-8"),
+            "svg" to ("image/svg+xml" to "UTF-8"),
+            "png" to ("image/png" to null),
+            "jpg" to ("image/jpeg" to null),
+            "jpeg" to ("image/jpeg" to null),
+            "gif" to ("image/gif" to null),
+            "webp" to ("image/webp" to null),
+            "woff" to ("font/woff" to null),
+            "woff2" to ("font/woff2" to null),
+            "ttf" to ("font/ttf" to null),
+            "otf" to ("font/otf" to null),
+            "mp3" to ("audio/mpeg" to null),
+            "mp4" to ("video/mp4" to null)
+        )
+    }
 
     private fun parseOpf(stream: InputStream): OpfResult {
         val parser = XmlPullParserFactory.newInstance().newPullParser()
